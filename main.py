@@ -2,6 +2,8 @@ from fastapi import FastAPI
 
 from database import engine, Base, User, Session
 
+from security import hash_password
+
 app = FastAPI()
 
 Base.metadata.create_all(bind=engine)
@@ -25,11 +27,13 @@ def test_db():
 def create_user(name: str, email: str, password: str):
     db = Session()
 
+    hashed_password = hash_password(password)
+
     user = User(
-        name=name,
-        email=email,
-        password=password
-    )
+      name=name,
+      email=email,
+      password=hashed_password
+)
 
     db.add(user)
     db.commit()
@@ -47,6 +51,15 @@ def get_users():
 
     users = db.query(User).all()
 
+    result = []
+
+    for user in users:
+        result.append({
+            "id": user.id,
+            "name": user.name,
+            "email": user.email
+        })
+
     db.close()
 
-    return users
+    return result
