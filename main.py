@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 
+from fastapi import FastAPI, Depends
+
 from pydantic import BaseModel
 
 from database import engine, Base, User, Session
 
-from security import hash_password, verify_password, create_access_token
+from security import hash_password, verify_password, create_access_token, get_current_user
 
 class UserCreate(BaseModel):
     name: str
@@ -74,6 +76,13 @@ def get_users():
     db.close()
 
     return result
+
+@app.get("/profile")
+def profile(user_id: str = Depends(get_current_user)):
+    return {
+        "message": "Token is valid",
+        "user_id": user_id
+    }
 
 @app.post("/login")
 def login(user_data: UserLogin):
