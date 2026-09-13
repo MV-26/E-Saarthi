@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends
 
 from pydantic import BaseModel
 
-from database import engine, Base, User, Session
+from database import engine, Base, User, Session, EmergencyContact
 
 from security import hash_password, verify_password, create_access_token, get_current_user
 
@@ -16,6 +16,11 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+class EmergencyContactCreate(BaseModel):
+    name: str
+    phone: str
+    relation: str | None = None
 
 app = FastAPI()
 
@@ -112,3 +117,51 @@ def login(user_data: UserLogin):
         "name": user.name,
         "email": user.email
     }
+
+@app.post("/emergency-contacts")
+def add_emergency_contact(
+    contact_data: EmergencyContactCreate,
+    user_id: str = Depends(get_current_user)
+):
+    db = Session()
+
+    contact = EmergencyContact(
+        user_id=int(user_id),
+        name=contact_data.name,
+        phone=contact_data.phone,
+        relation=contact_data.relation
+    )
+
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+    db.close()
+
+    return {
+        "message": "Emergency contact added successfully",
+        "contact_id": contact.id
+    }
+
+@app.get("/emergency-contacts")
+def get_emergency_contacts(
+    user_id: str = Depends(get_current_user)
+):
+    db = Session()
+
+    contacts = db.query(EmergencyContact).filter(
+        EmergencyContact.user_id == int(user_id)
+    ).all()
+
+    result = []
+
+    for contact in contacts:
+        result.append({
+            "id": contact.id,
+            "name": contact.name,
+            "phone": contact.phone,
+            "relation": contact.relation
+        })
+
+    db.close()
+
+    return result
