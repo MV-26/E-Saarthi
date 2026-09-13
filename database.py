@@ -25,6 +25,13 @@ class User(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
+class EmergencyContact(Base):
+    __tablename__ = "emergency_contacts"
 
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    relation = Column(String, nullable=True)
 
 print("Database connection setup ready!")
