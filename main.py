@@ -4,6 +4,10 @@ from fastapi import FastAPI, Depends
 
 from pydantic import BaseModel
 
+import os
+
+import requests
+
 from database import engine, Base, User, Session, EmergencyContact
 
 from security import hash_password, verify_password, create_access_token, get_current_user
@@ -16,6 +20,12 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+class RouteRequest(BaseModel):
+    current_latitude: float
+    current_longitude: float
+    destination_latitude: float
+    destination_longitude: float
 
 class EmergencyContactCreate(BaseModel):
     name: str
@@ -81,6 +91,75 @@ def get_users():
     db.close()
 
     return result
+
+@app.post("/routes")
+def get_routes(route_data: RouteRequest):
+
+    ors_api_key = os.getenv("ORS_API_KEY")
+
+    if not ors_api_key:
+        return {"error": "ORS API key is not configured"}
+
+    url = "https://api.heigit.org/openrouteservice/v2/directions/driving-car"
+
+    headers = {
+        "Authorization": ors_api_key,
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "coordinates": [
+            [
+                route_data.current_longitude,
+                route_data.current_latitude
+            ],
+            [
+                route_data.destination_longitude,
+                route_data.destination_latitude
+            ]
+        ],
+        "alternative_routes": {
+            "target_count": 3,
+            "share_factor": 0.8,
+            "weight_factor": 2
+        }
+    }
+
+    response = requests.post(
+        url,
+        headers=headers,
+        json=data
+    )
+
+    if response.status_code != 200:
+        return {
+            "error": "Unable to get routes",
+            "status_code": response.status_code,
+            "details": response.text
+        }
+
+    result = response.json()
+
+    routes = []
+
+    for index, route in enumerate(result.get("routes", []), start=1):
+
+        routes.append({
+            "route_id": index,
+            "distance_km": round(
+                route["summary"]["distance"] / 1000, 2
+            ),
+            "duration_minutes": round(
+                route["summary"]["duration"] / 60
+            ),
+            "safety_score": None,
+            "risk_level": None,
+            "geometry": route["geometry"]
+        })
+
+    return {
+        "routes": routes
+    }
 
 @app.get("/profile")
 def profile(user_id: str = Depends(get_current_user)):
