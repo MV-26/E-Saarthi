@@ -12,6 +12,10 @@ from database import engine, Base, User, Session, EmergencyContact
 
 from security import hash_password, verify_password, create_access_token, get_current_user
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 class UserCreate(BaseModel):
     name: str
     email: str
@@ -39,6 +43,114 @@ def get_risk_level(safety_score: float):
         return "Medium"
     else:
         return "High"
+
+def get_weather_score(latitude: float, longitude: float):
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+
+    if not api_key:
+        return 70, {"status": "Weather API key not configured"}
+
+    url = "https://api.openweathermap.org/data/2.5/weather"
+
+    params = {
+        "lat": latitude,
+        "lon": longitude,
+        "appid": api_key,
+        "units": "metric"
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+
+        if response.status_code != 200:
+            return 70, {
+                "status": "Weather API error",
+                "status_code": response.status_code,
+                "details": response.text
+            }
+        weather = response.json()
+
+        condition = weather["weather"][0]["main"].lower()
+        temperature = weather["main"]["temp"]
+        visibility = weather.get("visibility", 10000)
+        rain_1h = weather.get("rain", {}).get("1h", 0)
+
+        if condition == "clear":
+            score = 95
+        elif condition == "clouds":
+            score = 85
+        elif condition in ["mist", "fog", "haze", "smoke", "dust", "sand", "ash"]:
+            score = 70
+        elif condition in ["rain", "drizzle"]:
+            score = 60
+        elif condition == "thunderstorm":
+            score = 35
+        else:
+            score = 70
+
+        if rain_1h >= 10:
+            score -= 15
+        elif rain_1h >= 5:
+            score -= 10
+
+        if visibility < 2000:
+            score -= 15
+        elif visibility < 5000:
+            score -= 5
+
+        score = max(0, min(100, score))
+
+        return round(score, 2), {
+            "condition": condition,
+            "temperature_c": temperature,
+            "rain_1h_mm": rain_1h,
+            "visibility_m": visibility
+        }
+
+    except Exception:
+        return 70, {"status": "Weather service error"}
+
+def get_demo_safety_factors(route_id):
+    """
+    Temporary demo values.
+    Later these values will come from real crime,
+    traffic, weather, road and accident data.
+    """
+
+    demo_factors = {
+        1: {
+            "crime_score": 90,
+            "traffic_score": 70,
+            "weather_score": 90,
+            "road_score": 85,
+            "accident_score": 80
+        },
+        2: {
+            "crime_score": 75,
+            "traffic_score": 85,
+            "weather_score": 90,
+            "road_score": 75,
+            "accident_score": 70
+        },
+        3: {
+            "crime_score": 55,
+            "traffic_score": 80,
+            "weather_score": 85,
+            "road_score": 60,
+            "accident_score": 45
+        }
+    }
+
+    return demo_factors.get(
+        route_id,
+        {
+            "crime_score": 70,
+            "traffic_score": 70,
+            "weather_score": 70,
+            "road_score": 70,
+            "accident_score": 70
+        }
+    )
 
 def calculate_safety_score(
     crime_score: float,
@@ -205,13 +317,18 @@ def get_routes(route_data: RouteRequest):
     routes = []
 
     for index, route in enumerate(result.get("routes", []), start=1):
-
+        weather_score, weather_info = get_weather_score(
+            route_data.destination_latitude,
+            route_data.destination_longitude
+        )
+        safety_factors = get_demo_safety_factors(index)
+        safety_factors["weather_score"] = weather_score
         safety_score = calculate_safety_score(
-            crime_score=80,
-            traffic_score=75,
-            weather_score=85,
-            road_score=80,
-            accident_score=70
+            crime_score=safety_factors["crime_score"],
+            traffic_score=safety_factors["traffic_score"],
+            weather_score=safety_factors["weather_score"],
+            road_score=safety_factors["road_score"],
+            accident_score=safety_factors["accident_score"]
         )
 
         risk_level = get_risk_level(safety_score)
@@ -226,8 +343,10 @@ def get_routes(route_data: RouteRequest):
             ),
             "safety_score": safety_score,
             "risk_level": risk_level,
+            "safety_factors": safety_factors,
+            "weather_info": weather_info,
             "geometry": route["geometry"]
-        })
+       })
 
     route_options = select_route_options(routes)
 
