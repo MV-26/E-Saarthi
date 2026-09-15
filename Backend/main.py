@@ -315,12 +315,12 @@ def get_routes(route_data: RouteRequest):
     result = response.json()
 
     routes = []
-
-    for index, route in enumerate(result.get("routes", []), start=1):
-        weather_score, weather_info = get_weather_score(
+    weather_score, weather_info = get_weather_score(
             route_data.destination_latitude,
             route_data.destination_longitude
-        )
+    )
+
+    for index, route in enumerate(result.get("routes", []), start=1):
         safety_factors = get_demo_safety_factors(index)
         safety_factors["weather_score"] = weather_score
         safety_score = calculate_safety_score(
